@@ -147,47 +147,62 @@ const getTransactions = (params = {}) => {
 };
 
 /**
- * Transforms an array of transactions into a CSV string.
- * @param {Array<Object>} transactions - The array of transactions to transform.
- * @returns {string} The CSV string representation of the transactions.
+ * Converts transactions into a CSV string.
+ *
+ * By default, the CSV includes every top-level key from the first transaction.
+ * Pass `headers` to export only selected keys. Object values are JSON-stringified.
+ *
+ * @param {Array<Object>} transactions - Transactions to export.
+ * @param {Array<string>} [headers] - Optional transaction keys to include in the CSV.
+ * @returns {string} CSV content, including the header row.
  * @throws {Error} If the transactions array is empty or not provided.
  */
-const transformTransactions = (transactions) => {
-    if (!transactions || !transactions.length) { throw Error('Transactions not found'); }
-    const relevantHeaders = ['executed_at', 'amount', 'description', 'type'];
-    const headers = Object.keys(transactions[0]).filter((header) => relevantHeaders.includes(header));
+const toCSV = (transactions, headers) => {
+    if (!transactions?.length) { throw Error('Transactions not found'); }
+    const useHeaders = Object.keys(transactions[0]).filter((header) => headers?.length ? headers.includes(header) : true);
+    const escapeCSV = (value) => {
+        const stringValue = String(value);
+        return /[",\n\r]/.test(stringValue) ? `"${stringValue.replace(/"/g, '""')}"` : stringValue;
+    };
     const body = transactions.reduce((acc, transaction) => {
-        const values = headers.map((header) => {
+        const values = useHeaders.map((header) => {
             let value = transaction[header];
             if (value === undefined || value === null) { return ''; }
-            if (header === 'amount') {       
-                const normalized = Number(value.amount);
-                if (!Number.isFinite(normalized)) { return value.amount; }
-                return (normalized / 100).toFixed(2); 
-            }
-            return value;
+            return typeof value === 'object' ? JSON.stringify(value) : escapeCSV(value);
         });
         return `${acc}${values.join(',')}\n`;
-    }, `${headers.join(',')}\n`);
+    }, `${useHeaders.join(',')}\n`);
     return body;
 };
 
 /**
- * Saves the transactions to a file.
- * @param {Array} transactions - The transactions to be saved.
- * @param {boolean} csv - Indicates whether to save the transactions as CSV or JSON. Default is 'true'.
- * @param {string} folder - The folder where the file will be saved. Default is 'transactions'.
- * @returns {string} - The path of the saved file.
- * @throws {Error} - If transactions is not found.
+ * Saves transactions to a timestamped CSV or JSON file.
+ *
+ * CSV files are written by default. Pass `{ toCSV: false }` to write the raw
+ * transaction array as JSON instead. When writing CSV, `headers` limits the
+ * exported fields.
+ *
+ * @param {Array<Object>} transactions - Transactions to save.
+ * @param {Object} [csv] - Export options.
+ * @param {boolean} [csv.toCSV=true] - Whether to save as CSV. When false, saves JSON.
+ * @param {Array<string>} [csv.headers=[]] - Transaction keys to include in CSV output.
+ * @param {string} [folder='transactions'] - Folder where the file will be created.
+ * @returns {string} Path of the created file.
+ * @throws {Error} If transactions are not provided.
  */
-const saveTransactions = (transactions, csv = true, folder = 'transactions') => {
-    if (!transactions) { throw Error('Transactions not found'); }
+const saveTransactions = (transactions, csv = {}, folder = 'transactions') => {
+    if (!transactions) { throw Error('Transactions not found'); }   
+    csv = {
+        toCSV: true,
+        headers: [],
+        ...csv
+    };
     if (!fs.existsSync(folder)) { fs.mkdirSync(folder); }
     const date = new Date();
     const timestamp = `${date.getFullYear()}-${(`0` + parseInt(date.getMonth()+1)).slice(-2)}-${(`0` + date.getDate()).slice(-2)}T${(`0` + date.getHours()).slice(-2)}-${(`0` + date.getMinutes()).slice(-2)}`;
-    const extension = csv ? 'csv' : 'json';
+    const extension = csv.toCSV ? 'csv' : 'json';
     const path = `${folder}/${timestamp}.${extension}`;
-    const body = csv ? transformTransactions(transactions) : JSON.stringify(transactions);      
+    const body = csv.toCSV ? toCSV(transactions, csv.headers) : JSON.stringify(transactions);      
     fs.writeFileSync(path, body); 
     return path;
 }

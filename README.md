@@ -1,4 +1,5 @@
-Node.js module to retrieve transactions from a Coverflex account.
+Node.js module to retrieve transactions from a Coverflex account and save them
+as CSV or JSON files.
 
 ## Installation
 
@@ -8,7 +9,7 @@ Install the package using npm:
 npm install coverflex-transactions
 ```
 
-After installing, import it into your project:
+Import it into your project:
 
 ```js
 import coverflex from 'coverflex-transactions';
@@ -16,27 +17,40 @@ import coverflex from 'coverflex-transactions';
 
 ## Example
 
-Saving transactions to a CSV file:
+Saving all transactions to a CSV file:
 
 ```js
 import coverflex from 'coverflex-transactions';
+
 try {
     await coverflex.login({
         email: 'your-email@provider.com',
         password: 'YourPassword123456'
     });
+
     const transactions = await coverflex.getTransactions();
-    coverflex.saveTransactions(transactions);
+    const path = coverflex.saveTransactions(transactions);
+
+    console.log(`Transactions saved to ${path}`);
 } catch (err) {
     console.error(err);
 }
+```
+
+Saving selected fields:
+
+```js
+coverflex.saveTransactions(transactions, {
+    headers: ['executed_at', 'description', 'amount', 'is_debit']
+});
 ```
 
 ## Methods
 
 ### `login`
 
-Logs in with the provided Coverflex credentials.
+Logs in with the provided Coverflex credentials and stores session tokens in
+`tokens.json` in the current working directory.
 
 ```js
 coverflex.login({
@@ -47,19 +61,17 @@ coverflex.login({
 
 | Property | Definition |
 | -------- | ---------- |
-| `email` | The user e-mail address |
-| `password` | The user password |
-| `otp` | Optional; SMS one-time code, only needed when bypassing the interactive prompt |
+| `email` | The user email address. |
+| `password` | The user password. |
+| `otp` | Optional SMS one-time code. If omitted and required, the module prompts for it interactively. |
 
-On first login, or whenever the trusted session expires, the module will prompt you to enter the SMS code sent by Coverflex. Tokens are stored locally in `tokens.json` so future runs can renew the session or use the trusted user-agent token without asking for a new code.
+The login flow tries these strategies in order:
 
-The login process attempts authentication in this order:
-
-1. Renew the access token using the stored refresh token.
+1. Renew the access token with the stored refresh token.
 2. Log in with the stored trusted user-agent token.
-3. Fall back to a full login and prompt for the SMS OTP code.
+3. Fall back to a full login and request the SMS OTP code.
 
-This function returns the access token for later use, if needed.
+Returns the access token.
 
 ### `getTransactions`
 
@@ -69,12 +81,35 @@ Retrieves transactions from the user's Coverflex account.
 coverflex.getTransactions();
 ```
 
-Optional query parameters can be passed to the Coverflex movements endpoint. By default, the module adds `pagination: 'no'`.
+Optional query parameters are passed to the Coverflex movements endpoint. The
+module adds `pagination: 'no'` by default.
 
 ### `saveTransactions`
 
-Saves the transactions to a file, either in CSV or JSON format. Use the second parameter as a boolean to indicate whether to save in CSV format, which defaults to `true`. The third parameter indicates the folder where the file will be saved. Default is `transactions`.
+Saves transactions to a timestamped file. CSV output is enabled by default and
+files are written to the `transactions` folder unless another folder is passed.
 
 ```js
-coverflex.saveTransactions(transactionsArray, false, 'some-folder');
+coverflex.saveTransactions(transactions);
 ```
+
+Write JSON instead:
+
+```js
+coverflex.saveTransactions(transactions, { toCSV: false });
+```
+
+Write CSV to a custom folder:
+
+```js
+coverflex.saveTransactions(transactions, {}, 'exports');
+```
+
+CSV options:
+
+| Property | Definition |
+| -------- | ---------- |
+| `toCSV` | Optional boolean. Defaults to `true`; set to `false` to save JSON. |
+| `headers` | Optional array of transaction keys to include in CSV output. Defaults to all keys from the first transaction. |
+
+Returns the created file path, for example `transactions/2026-05-02T14-20.csv`.
